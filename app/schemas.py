@@ -1,8 +1,8 @@
 
-from datetime import datetime , date
+from datetime import datetime , date, time
 from operator import le
-from pydantic import BaseModel, EmailStr , conint
-from typing import Optional
+from pydantic import BaseModel, EmailStr, Field , conint
+from typing import List, Optional
 from app.models import *
 from pydantic.types import conlist
 
@@ -82,6 +82,22 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     id: Optional[str] = None
 
+
+
+class ShiftTimingCreate(BaseModel):
+    shift_start: time = Field(..., example="08:00")
+    shift_end: time = Field(..., example="16:00")
+    weekday: int = Field(..., ge=1, le=7, example=1) # 1 = Monday to 7 = Sunday
+
+class TenantShiftCreate(BaseModel):
+    tenant_name: str
+    shift_name: str
+    timings: List[ShiftTimingCreate]    
+
+class TenantOperation(BaseModel):
+    tenantid: int
+    operation: List[str] # or List[YourOperationModel] if you have a nested schema
+# -------------------------------------------------------------------------------------------
 # Old schema for refernace only 
 
 class UserCreate(BaseModel):
@@ -90,6 +106,7 @@ class UserCreate(BaseModel):
     name:  str
     phone: str
     date: date
+    
     
 
     class Config:

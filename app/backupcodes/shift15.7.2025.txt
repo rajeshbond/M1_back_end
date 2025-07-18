@@ -1,0 +1,150 @@
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+from datetime import datetime
+import pandas as pd
+
+from app import oauth2, schemas
+from .. import models
+from ..database import get_db
+from ..function import shifts_fn
+
+router = APIRouter(
+    prefix="/shifts/v1",
+    tags=["Shifts"]
+)
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+def create_multiple_shifts(
+    payload: List[schemas.TenantShiftCreate],
+    db: Session = Depends(get_db),
+    current_user: models.user = Depends(oauth2.get_current_user)
+):
+    # ✅ Load user with role relationship
+    user = (
+        db.query(models.user)
+        .options(joinedload(models.user.role))
+        .filter(models.user.id == current_user.id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.role:
+        raise HTTPException(status_code=403, detail="User role not assigned")
+
+    user_role = user.role.role
+
+    if user_role not in ["superAdmin", "admin", "tenantAdmin"]:
+        raise HTTPException(status_code=403, detail="Unauthorized role")
+
+    for shift in payload:
+        if not shift.timings:
+            raise HTTPException(status_code=400, detail="Shift timings must be provided")
+
+        # ✅ Case-insensitive tenant name lookup
+        tenant = (
+            db.query(models.tenant)
+            .filter(func.lower(models.tenant.name) == shift.tenant_name.lower())
+            .first()
+        )
+
+        if not tenant:
+            raise HTTPException(status_code=404, detail=f"Tenant '{shift.tenant_name}' not found")
+
+        tenant_id = tenant.id
+
+        # ✅ Restrict tenantAdmin to own tenant only
+        if user_role == "tenantAdmin" and tenant_id != user.tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to create shifts for this tenant"
+            )
+
+        # ✅ Ensure shift name is unique per tenant
+        existing_shift = db.query(models.tenant_shift).filter_by(
+            tenant_id=tenant_id, shift_name=shift.shift_name
+        ).first()
+
+        if existing_shift:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Shift '{shift.shift_name}' already exists for tenant '{shift.tenant_name}'"
+            )
+
+        # ✅ Validate timing logic
+        timing_df = pd.DataFrame([t.dict() for t in shift.timings])
+        timing_df["duration"] = timing_df.apply(
+            lambda row: shifts_fn.calculate_duration(row["shift_start"], row["shift_end"]), axis=1
+        )
+
+        if any(timing_df["duration"] == 0):
+            bad_days = timing_df.loc[timing_df["duration"] == 0, "weekday"].tolist()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Start and end time cannot be the same on weekday(s) {bad_days}"
+            )
+
+        new_hours = timing_df.groupby("weekday")["duration"].sum().to_dict()
+
+        # ✅ Get existing durations for the tenant
+        existing_timings = (
+            db.query(models.ShiftTiming)
+            .join(models.tenant_shift, models.tenant_shift.id == models.ShiftTiming.tenant_shift_id)
+            .filter(models.tenant_shift.tenant_id == tenant_id)
+            .all()
+        )
+
+        existing_hours = {}
+        if existing_timings:
+            existing_df = pd.DataFrame([{
+                "shift_start": s.shift_start,
+                "shift_end": s.shift_end,
+                "weekday": s.weekday
+            } for s in existing_timings])
+
+            existing_df["duration"] = existing_df.apply(
+                lambda row: shifts_fn.calculate_duration(row["shift_start"], row["shift_end"]), axis=1
+            )
+
+            existing_hours = existing_df.groupby("weekday")["duration"].sum().to_dict()
+
+        for weekday, hours in new_hours.items():
+            total = existing_hours.get(weekday, 0) + hours
+            if total > 24:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Total shift duration exceeds 24 hours on weekday {weekday} for tenant '{shift.tenant_name}'"
+                )
+
+        # ✅ Overlap check
+        shifts_fn.check_overlap_df(timing_df)
+
+        # ✅ Create tenant_shift entry
+        new_shift = models.tenant_shift(
+            tenant_id=tenant_id,
+            shift_name=shift.shift_name,
+            created_by=user.id,
+            updated_by=user.id
+        )
+        db.add(new_shift)
+        db.flush()  # so new_shift.id is available
+
+        # ✅ Create shift timings
+        shift_timings = [
+            models.ShiftTiming(
+                tenant_shift_id=new_shift.id,
+                shift_start=row.shift_start,
+                shift_end=row.shift_end,
+                weekday=row.weekday,
+                created_by=user.id,
+                updated_by=user.id
+            )
+            for row in timing_df.itertuples()
+        ]
+        db.add_all(shift_timings)
+
+    db.commit()
+    return {"message": "All shifts inserted successfully"}

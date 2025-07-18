@@ -1,6 +1,8 @@
 
 from enum import unique    # added 
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey , Float, BigInteger,Sequence, Date, Time, UniqueConstraint #added 
+
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey , Float, BigInteger,Sequence, Date, Time, UniqueConstraint ,Index
+#added 
 from sqlalchemy.sql.sqltypes import TIMESTAMP # added 
 from sqlalchemy.orm import relationship # added 
 from sqlalchemy.sql.expression import text  #added 
@@ -67,6 +69,7 @@ class user(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "employee_id", name="uix_tenant_employee"),
+        Index("ix_tenant_shift_tenant_id", "tenant_id"),
     )
 
 class tenant_shift(Base):
@@ -82,6 +85,7 @@ class tenant_shift(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "shift_name", name="uix_tenant_shift_name"),
+        Index("ix_shift_tenant_day", "tenant_id", "shift_name"), 
     )
 
     timings = relationship("ShiftTiming", backref="tenant_shift", cascade="all, delete-orphan")
@@ -95,7 +99,7 @@ class ShiftTiming(Base):
     tenant_shift_id = Column(BigInteger, ForeignKey("tenant_shift.id", ondelete="CASCADE"), nullable=False)
     shift_start = Column(Time, nullable=False)
     shift_end = Column(Time, nullable=False)
-    weekday = Column(Integer, nullable=False)  # 1=Mon, ..., 7=Sun
+    weekday = Column(Integer, nullable=True)  # 1=Mon, ..., 7=Sun
 
     created_by = Column(Integer)
     updated_by = Column(Integer)
@@ -104,6 +108,7 @@ class ShiftTiming(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_shift_id", "weekday", name="uix_shift_weekday"),  # Prevent duplicates
+        Index("ix_tenant_shift_tenant_id", "tenant_shift_id", "weekday"),
     )
 
 
@@ -113,44 +118,50 @@ class Operation_List(Base):
     __tablename__ = "operation_list"
 
     id = Column(BigInteger, primary_key=True, nullable=False)
-    tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False)
-    operation_name = Column(String(100), nullable=False)
-    created_by = Column(Integer)
-    updated_by = Column(Integer)
-    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
-    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    
+    tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=True) # need to be fetch from tenant name provided by user 
+    
+    operation_name = Column(String(100), nullable=False) # to be provided by the super user 
+
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "operation_name", name="uix_tenant_operation_name"),
     )
 
+    # Optional relationships for easier ORM access
+    tenant = relationship("tenant", backref="operations")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
 
 class Product_Master(Base):
     __tablename__ = "product_master"
     id = Column(BigInteger, primary_key=True, nullable=False)
-    tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=True)
     product_name = Column(String)
     product_no = Column(String)
     drawing_no = Column(String)
-    created_by = Column(Integer)
-    updated_by = Column(Integer)
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
-    operations = relationship("Operation_List", secondary="product_operation_link", backref="products")
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "product_no", name="uix_tenant_product_no"),
+        Index("ix_product_tenant", "tenant_id", "product_no", "drawing_no"),
+    )
 
-# class Product_Master(Base):
-#     __tablename__ = "product_master"
-#     id = Column(BigInteger, primary_key=True, nullable=False)
-#     tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False)
-#     product_name = Column(String)
-#     product_no = Column(String)
-#     drawing_no = Column(String)
-#     operation = Column(Integer, ForeignKey("operation_list.id", ondelete="CASCADE"), nullable=False)
-#     created_by = Column(Integer)
-#     updated_by = Column(Integer)
-#     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
-#     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    tenant = relationship("tenant", backref="product")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
+    
+
+
+
 
 class ProductOperationLink(Base):
     __tablename__ = "product_operation_link"
@@ -158,10 +169,18 @@ class ProductOperationLink(Base):
     product_id = Column(BigInteger, ForeignKey("product_master.id", ondelete="CASCADE"), nullable=False)
     operation_id = Column(BigInteger, ForeignKey("operation_list.id", ondelete="CASCADE"), nullable=False)
     sequence_no = Column(Integer, nullable=True)  # optional, for ordering operations
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
     __table_args__ = (
         UniqueConstraint("product_id", "operation_id", name="uix_product_operation"),
-    )
-    
+    )   
+ 
+    product = relationship("Product_Master", backref="operations")
+    operation = relationship("Operation_List", backref="products")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
 
 
 
@@ -172,19 +191,24 @@ class Mold_Master(Base):
 
     id = Column(BigInteger, primary_key=True, nullable=False)
     tenant_id = Column(BigInteger, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(BigInteger, ForeignKey("product_master.id", ondelete="CASCADE"), nullable=False)
     mold_name = Column(String(100), nullable=False)
     mold_no = Column(String(100), nullable=False)
     type_of_mold = Column(String(100), nullable=False)
     shot_wt = Column(Float, nullable=True)
     spl_instructions = Column(JSONB, nullable=True)
-    created_by = Column(Integer)
-    updated_by = Column(Integer)
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "mold_no", name="uix_mold_no"),
     )
+    operations = relationship("Operation_List", secondary="product_operation_link", backref="products")
+    tenant = relationship("tenant", backref="product")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
 
 
 # Machine Master
@@ -201,14 +225,18 @@ class Machine_Master(Base):
     machine_no = Column(String(100), nullable=False)
     specification = Column(JSONB, nullable=True)
 
-    created_by = Column(Integer)
-    updated_by = Column(Integer)
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "machine_no", name="uix_machine_no"),
     )
+    tenant = relationship("tenant", backref="product")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
+
 
 
   
@@ -220,10 +248,18 @@ class MoldMachineLink(Base):
     mold_id = Column(BigInteger, ForeignKey("mold_master.id", ondelete="CASCADE"), nullable=False)
     machine_id = Column(BigInteger, ForeignKey("machine_master.id", ondelete="CASCADE"), nullable=False)
     cycle_time = Column(Float, nullable=False)  # e.g., in seconds
+    created_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    updated_by = Column(BigInteger, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "mold_id", "machine_id", name="uix_tenant_mold_machine"),
     )
+    
+    tenant = relationship("tenant", backref="product")
+    creator = relationship("user", foreign_keys=[created_by], backref="created_operations")
+    updater = relationship("user", foreign_keys=[updated_by], backref="updated_operations")
 
 
 
