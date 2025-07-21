@@ -14,7 +14,7 @@ router = APIRouter(prefix="/shifts/v1", tags=["Shifts"])
 def create_multiple_shifts(
     payload: List[schemas.TenantShiftCreate],
     db: Session = Depends(get_db),
-    current_user: models.user = Depends(oauth2.get_current_user)
+    current_user: int = Depends(oauth2.get_current_user)
 ):
     try:    
         role = db.query(models.role).filter(models.role.id == current_user.role_id).first()

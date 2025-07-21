@@ -2,8 +2,10 @@ from fastapi import Response, status, HTTPException, Depends, APIRouter
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import pandas as pd
+from sqlalchemy.exc import SQLAlchemyError
 
 from app import oauth2, schemas
+from ..function import fetch_details
 from .. import models, utls
 from ..database import get_db
 
@@ -104,3 +106,25 @@ def tenantUser(
     except Exception as e:
         print("Unexpected Error:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+@router.post("/userreport", status_code=status.HTTP_201_CREATED)
+def tenantUserReport(
+    db: Session = Depends(get_db),
+    current_user: int = Depends(oauth2.get_current_user)
+):
+    try:
+        # <---------- 1. Validate user, tenant, role ---------->
+        user, tenant, role = fetch_details.user_details(current_user, db)
+        return user,tenant, role
+    except HTTPException as he:
+        raise he
+    
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"Database error: {str(e)}")
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=f"Unexpected error:{str (e)} ")
+

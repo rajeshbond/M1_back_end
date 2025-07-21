@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from app.routers import tenant
 from . import models
 from .database import engine
-from .routers import post, users, auth , vote ,intradayprice,watchlist,admin,shifts,declaration
+from .routers import (auth ,admin,shifts,declaration,fadmin)
 from .config import settings
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
@@ -31,17 +31,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 # # #####################################
-app.include_router(post.router)
-app.include_router(users.router)
 app.include_router(auth.router)
-app.include_router(vote.router)
-app.include_router(intradayprice.router)
-app.include_router(watchlist.router)
 app.include_router(tenant.router)
 app.include_router(shifts.router)
 app.include_router(declaration.router)
 # app.include_router(t_shift.router)
 # app.include_router(admin.router)
+app.include_router(fadmin.router)
 app.include_router(admin.router,include_in_schema=False)
 
 

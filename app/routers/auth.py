@@ -11,7 +11,7 @@ router = APIRouter(tags=['Authentication'])
 @router.post('/login',response_model= schemas.Token)
 def login(user_credentials:OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     
-    user = db.query(models.user).filter(models.user.email == user_credentials.username.lower()).first()
+    user = db.query(models.User).filter(models.User.email == user_credentials.username.lower()).first()
     
     if not user:
         raise HTTPException(
@@ -23,7 +23,7 @@ def login(user_credentials:OAuth2PasswordRequestForm = Depends(), db: Session = 
     if not user.is_verified_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail= f"{user.email} user not varifed ")
-    tenant_details = db.query(models.tenant).filter(models.tenant.id == user.tenant_id).first()
+    tenant_details = db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).first()
     # print(tenant_details.is_active) # for debugginh purpose 
     if not tenant_details.is_verified_tenant :
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail= f"Tenant {tenant_details.tenant_name} is not varified, Please contact your Admin")

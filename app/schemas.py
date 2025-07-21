@@ -11,15 +11,15 @@ class ShiftName(BaseModel):
     tenant_name:str
 
 class RoleCreate(BaseModel):
-    role: str
+    user_role: str
 class RoleOut(BaseModel):
     id: int
-    role: str
+    user_role: str
 
     class Config:
          from_attributes  = True
 
-class tenant(BaseModel):
+class Tenant(BaseModel):
     tenant_name: str
     name: str
     email: EmailStr
@@ -27,7 +27,7 @@ class tenant(BaseModel):
     address: str
     class Config:
         from_attributes  = True
-class tenantout(BaseModel):
+class Tenantout(BaseModel):
     id: int
     tenant_name: str
     name: str
@@ -64,7 +64,7 @@ class TUserOut(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    name: str
+    user_name: str
     email: EmailStr
     employee_id: str
     phone: Optional[str]
@@ -99,106 +99,3 @@ class TenantOperation(BaseModel):
     operation: List[str] # or List[YourOperationModel] if you have a nested schema
 # -------------------------------------------------------------------------------------------
 # Old schema for refernace only 
-
-class UserCreate(BaseModel):
-    email: EmailStr           # Check for proper email syntex 
-    password : str
-    name:  str
-    phone: str
-    date: date
-    
-    
-
-    class Config:
-        from_attributes  = True  # original 
- 
-class UserOut(BaseModel):  # Select BaseMolel is we select UserCreate then password field also get inhertited by default 
-    id: int
-    email: EmailStr
-    name: str
-    phone: str
-    date: date
-    created_at: datetime
-
-    
-    class Config:
-        from_attributes  = True  
-    
-class ForgetPassword(BaseModel):
-    email: EmailStr
-    
-    class Config:
-        from_attributes  = True
-        
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-   
-    class Config:
-        from_attributes  = True  
-class UserChangePassword(BaseModel):
-    password: str
-    password_new: str
-    
-class ForgotPasswordChange(BaseModel):
-    reset_code1: str
-    password: str
-    
-class UserForgetlink(BaseModel):
-    email: str
-    class Config:
-        from_attributes  = True 
-class UserForgetPasswordOut(BaseModel):
-    id: int
-    class Config:
-        from_attributes  = True 
- 
- 
-class PostBase(BaseModel):
-    title: str
-    content: str
-    published: bool = True
-           
-class PostCreate(PostBase):
-    pass
-
-class Post(PostBase):
-    id: int
-    created_at: datetime
-    owner_id: int
-    owner: UserOut  
-    class Config:
-        from_attributes  = True
-
-class PostOut(BaseModel):
-    Post : Post
-    votes : int
-    class Config:
-        from_attributes  = True
-
-    
-
-#  auth.py Token schemas
- 
-
-    
-# Schemes for voting 
-
-class Vote(BaseModel):
-    post_id : int
-    dir: conint(le=1) # type: ignore
-class WatchListIn(BaseModel):
-    symbol: str
-class WatchListOut(BaseModel):
-    symbol:str
-    name_of_the_company:str
-class ForgotPassword(BaseModel):
-    email: EmailStr
-class WatchiLstInCompany(BaseModel):
-    name_of_the_company:str
-  
-    
-
-
-   
-    
